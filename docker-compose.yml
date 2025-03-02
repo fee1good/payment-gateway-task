@@ -1,0 +1,112 @@
+version: "3.7"
+
+networks:
+  kafka_network:
+    driver: bridge
+
+services:
+  zookeeper:
+    restart: always
+    container_name: kafka-like-zookeeper
+    image: bitnami/zookeeper:3.8
+    ports:
+      - "2181:2181"
+    volumes:
+      - "zookeeper-volume:/bitnami"
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+    networks:
+      - kafka_network
+
+  kafka:
+    restart: always
+    container_name: kafka-like
+    image: bitnami/kafka:3.3
+    ports:
+      - "9093:9093"
+      - "9092:9092" 
+    volumes:
+      - "kafka-volume:/bitnami"
+    environment:
+      - KAFKA_BROKER_ID=1
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=kafka-like-zookeeper:2181
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CLIENT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      - KAFKA_CFG_LISTENERS=CLIENT://:9092,EXTERNAL://:9093
+      - KAFKA_CFG_ADVERTISED_LISTENERS=CLIENT://kafka-like:9092,EXTERNAL://localhost:9093
+      - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=CLIENT
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
+      - KAFKA_TOPICS=payment-transactions:1:1
+    depends_on:
+      - zookeeper
+    networks:
+      - kafka_network
+
+  kafka-setup:
+    image: bitnami/kafka:3.3
+    depends_on:
+      - kafka
+    command: >
+      bash -c "
+        sleep 10 &&
+        kafka-topics.sh --create --if-not-exists --topic payment-transactions --bootstrap-server kafka-like:9092 --partitions 1 --replication-factor 1
+      "
+    networks:
+      - kafka_network
+
+  app:
+    build: .
+    container_name: payment_gateway_app
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka-setup:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+    environment:
+      - DATABASE_URL=postgres://user:password@postgres:5432/payments?sslmode=disable
+      - KAFKA_BROKER_URL=kafka-like:9092
+      - DB_USER=user
+      - DB_PASSWORD=password
+      - DB_NAME=payments
+      - DB_HOST=postgres
+      - DB_PORT=5432
+    command: ["/app/main"]
+    networks:
+      - kafka_network
+
+  postgres:
+    image: postgres:13
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=payments
+    volumes:
+      - ./db/migrations/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - kafka_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d payments"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:latest
+    container_name: redis
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass password
+    networks:
+      - kafka_network 
+
+volumes:
+  kafka-volume:
+  zookeeper-volume:
