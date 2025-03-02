@@ -13,19 +13,29 @@ that's it
 # Deposit transaction
 curl -X POST http://localhost:8080/deposit \
   -H "Content-Type: application/json" \
-  -d '{"user_id": 123, "amount": 100.50, "currency": "USD", "country": "US", "payment_method": "card"}'
+  -d '{
+    "user_id": 123,
+    "amount": "100.50",
+    "currency": "USD"
+  }'
 
 # Withdrawal transaction
 curl -X POST http://localhost:8080/withdrawal \
   -H "Content-Type: application/json" \
-  -d '{"user_id": 123, "amount": 50.25, "currency": "EUR", "country": "DE", "payment_method": "bank_transfer"}'
+  -d '{
+    "user_id": 123,
+    "amount": "50.25",
+    "currency": "USD"
+  }'
 
-# Gateway callback
-curl -X POST http://localhost:8080/callback/42 \
+# Callback for transaction
+curl -X POST http://localhost:8080/callback/123 \
   -H "Content-Type: application/json" \
-  -d '{"gateway_transaction_id": "gw-tx-123", "status": "completed", "gateway_id": 1}'
-
-````
+  -d '{
+    "gateway_txn_id": "gw-tx-12345",
+    "status": "completed"
+  }'
+```
 
 ## To-Do
 - Use Goose for database migrations
